@@ -11,8 +11,7 @@ logs/
 *.log
 npm-debug.log*
 
-# Captures
-captures/
+
 
 # OS
 .DS_Store
