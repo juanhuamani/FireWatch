@@ -563,6 +563,16 @@ app.post('/update-thresholds', (req, res) => {
     humidity: humidity ? parseFloat(humidity) : systemState.thresholds.humidity
   };
 
+  // Guardar umbrales en SQLite
+  try {
+    databaseService.setConfig('threshold_temperature', systemState.thresholds.temperature.toString(), 'number');
+    databaseService.setConfig('threshold_light', systemState.thresholds.light.toString(), 'number');
+    databaseService.setConfig('threshold_smoke', systemState.thresholds.smoke.toString(), 'number');
+    databaseService.setConfig('threshold_humidity', systemState.thresholds.humidity.toString(), 'number');
+  } catch (error) {
+    console.error('⚠️  Error al guardar umbrales en SQLite:', error);
+  }
+
   logEvent('config', '⚙️ Umbrales actualizados vía API', systemState.thresholds);
 
   res.json({
@@ -925,6 +935,64 @@ if (!fs.existsSync(modelsDir)) {
 try {
   databaseService.initializeTables();
   console.log('✅ Base de datos SQLite inicializada correctamente');
+  
+  // Cargar última lectura de sensores desde SQLite
+  try {
+    const lastSensors = databaseService.getLatestSensorData(1);
+    if (lastSensors && lastSensors.length > 0) {
+      const last = lastSensors[0];
+      systemState.sensorData = {
+        temperature: last.temperature,
+        light: last.light,
+        smoke: last.smoke,
+        humidity: last.humidity,
+        timestamp: last.timestamp ? new Date(last.timestamp) : new Date(),
+      };
+      console.log('✅ Última lectura de sensores cargada desde SQLite');
+      console.log(`   Temperatura: ${last.temperature}°C, Luz: ${last.light}, Humo: ${last.smoke}`);
+    } else {
+      console.log('ℹ️ No hay lecturas previas en SQLite; esperando nuevos datos');
+    }
+  } catch (error) {
+    console.error('⚠️  No se pudo cargar última lectura de sensores:', error);
+  }
+  
+  // Cargar último estado de alerta desde SQLite
+  try {
+    const lastAlertStatus = databaseService.getLastAlertStatus();
+    systemState.alertStatus = lastAlertStatus;
+    console.log(`✅ Último estado de alerta cargado desde SQLite: ${lastAlertStatus}`);
+  } catch (error) {
+    console.error('⚠️  No se pudo cargar último estado de alerta:', error);
+  }
+  
+  // Cargar umbrales desde configuración
+  try {
+    const tempThreshold = databaseService.getConfig('threshold_temperature');
+    const lightThreshold = databaseService.getConfig('threshold_light');
+    const smokeThreshold = databaseService.getConfig('threshold_smoke');
+    const humidityThreshold = databaseService.getConfig('threshold_humidity');
+    
+    if (tempThreshold) {
+      systemState.thresholds.temperature = parseFloat(tempThreshold.value);
+    }
+    if (lightThreshold) {
+      systemState.thresholds.light = parseFloat(lightThreshold.value);
+    }
+    if (smokeThreshold) {
+      systemState.thresholds.smoke = parseFloat(smokeThreshold.value);
+    }
+    if (humidityThreshold) {
+      systemState.thresholds.humidity = parseFloat(humidityThreshold.value);
+    }
+    
+    if (tempThreshold || lightThreshold || smokeThreshold || humidityThreshold) {
+      console.log('✅ Umbrales cargados desde SQLite');
+    }
+  } catch (error) {
+    console.error('⚠️  No se pudieron cargar umbrales desde SQLite:', error);
+  }
+  
 } catch (error) {
   console.error('❌ Error al inicializar SQLite:', error);
 }

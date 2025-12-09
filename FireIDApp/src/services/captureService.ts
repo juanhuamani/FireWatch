@@ -6,8 +6,37 @@ import databaseService from './databaseService';
 import { CaptureRequest, CaptureResponse } from '../types';
 
 class CaptureService {
+  private isCapturing = false;
+  private pendingRequests: CaptureRequest[] = [];
+
   async handleCaptureRequest(request: CaptureRequest): Promise<void> {
-    console.log('🚀 Iniciando captura de FOTO...');
+    console.log('🚀 Solicitud de captura recibida:', request.requestId);
+
+    // Si ya hay una captura en proceso, agregar a la cola
+    if (this.isCapturing) {
+      console.log('⏳ Captura en proceso, agregando a cola:', request.requestId);
+      this.pendingRequests.push(request);
+      return;
+    }
+
+    // Procesar esta solicitud
+    await this.processCaptureRequest(request);
+    
+    // Procesar solicitudes pendientes
+    while (this.pendingRequests.length > 0 && !this.isCapturing) {
+      const nextRequest = this.pendingRequests.shift();
+      if (nextRequest) {
+        console.log('📋 Procesando solicitud pendiente:', nextRequest.requestId);
+        await this.processCaptureRequest(nextRequest);
+      }
+    }
+  }
+
+  private async processCaptureRequest(request: CaptureRequest): Promise<void> {
+    // Marcar que hay una captura en proceso
+    this.isCapturing = true;
+    
+    console.log('🚀 Iniciando captura de FOTO...', request.requestId);
 
     try {
       // SOLO capturar foto
@@ -74,6 +103,10 @@ class CaptureService {
       };
       
       socketService.sendCaptureResponse(errorResponse);
+    } finally {
+      // Liberar el bloqueo de captura
+      this.isCapturing = false;
+      console.log('✅ Captura finalizada, bloqueo liberado');
     }
   }
 

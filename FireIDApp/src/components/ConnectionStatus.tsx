@@ -32,19 +32,26 @@ const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ isConnected }) => {
     }
   }, [isConnected, pulseAnim]);
 
+  const statusColor = isConnected ? COLORS.success : COLORS.danger;
+  const statusText = isConnected ? 'Conectado' : 'Desconectado';
+
   return (
-    <View style={[styles.container, isConnected ? NEUMORPHIC.raised : NEUMORPHIC.flat]}>
+    <View style={[
+      styles.container, 
+      isConnected ? styles.containerConnected : styles.containerDisconnected,
+      isConnected ? NEUMORPHIC.raised : NEUMORPHIC.flat
+    ]}>
       <Animated.View
         style={[
-          styles.dot,
+          styles.statusIndicator,
           { 
-            backgroundColor: isConnected ? COLORS.success : COLORS.danger,
+            backgroundColor: statusColor,
             transform: [{ scale: pulseAnim }]
           },
         ]}
       />
-      <Text style={styles.text}>
-        {isConnected ? 'CONECTADO' : 'DESCONECTADO'}
+      <Text style={[styles.text, { color: statusColor }]}>
+        {statusText}
       </Text>
     </View>
   );
@@ -54,21 +61,34 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: SPACING.xs,
     paddingHorizontal: SPACING.sm,
     borderRadius: BORDER_RADIUS.round,
     backgroundColor: COLORS.card,
+    gap: SPACING.xs,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
+  containerConnected: {
+    borderWidth: 1,
+    borderColor: COLORS.success + '30',
+  },
+  containerDisconnected: {
+    borderWidth: 1,
+    borderColor: COLORS.danger + '30',
+    opacity: 0.7,
+  },
+  statusIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    shadowColor: COLORS.success,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 2,
   },
   text: {
-    fontSize: 9,
-    color: COLORS.textSecondary,
-    letterSpacing: 1,
+    fontSize: 10,
+    letterSpacing: 0.5,
     ...FONTS.bold,
   },
 });

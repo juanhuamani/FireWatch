@@ -36,6 +36,10 @@ const DashboardScreen: React.FC = () => {
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
 
+  // Formateador seguro para números
+  const formatValue = (val: number | null | undefined): string =>
+    val === null || val === undefined || Number.isNaN(val) ? '--' : `${val}`;
+
   useEffect(() => {
     // Solicitar permisos de notificación
     notificationService.requestPermissions();
@@ -143,7 +147,15 @@ const DashboardScreen: React.FC = () => {
               <Text style={styles.title}>FireWatch</Text>
               <Text style={styles.subtitle}>Detección Inteligente</Text>
             </View>
-            <ConnectionStatus isConnected={isConnected} />
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={[styles.headerButton, NEUMORPHIC.flat]}
+                onPress={() => navigation.navigate('Activity')}
+                activeOpacity={0.7}>
+                <Text style={styles.headerButtonIcon}>📊</Text>
+              </TouchableOpacity>
+              <ConnectionStatus isConnected={isConnected} />
+            </View>
           </View>
 
           <View>
@@ -161,17 +173,17 @@ const DashboardScreen: React.FC = () => {
                         value={formatTemperature(sensorData.temperature)}
                         icon="🌡️"
                         threshold={THRESHOLDS.temperature}
-                        currentValue={sensorData.temperature}
+                        currentValue={sensorData.temperature ?? 0}
                         unit="°C"
                       />
                     </View>
                     <View style={styles.gridItem}>
                       <SensorCard
                         title="Luminosidad"
-                        value={sensorData.light.toString()}
+                        value={formatValue(sensorData.light)}
                         icon="💡"
                         threshold={THRESHOLDS.light}
-                        currentValue={sensorData.light}
+                        currentValue={sensorData.light ?? 0}
                       />
                     </View>
                   </View>
@@ -179,10 +191,10 @@ const DashboardScreen: React.FC = () => {
                     <View style={styles.gridItem}>
                       <SensorCard
                         title="Humo"
-                        value={sensorData.smoke.toString()}
+                        value={formatValue(sensorData.smoke)}
                         icon="💨"
                         threshold={THRESHOLDS.smoke}
-                        currentValue={sensorData.smoke}
+                        currentValue={sensorData.smoke ?? 0}
                       />
                     </View>
                     {sensorData.humidity !== undefined && (
@@ -192,7 +204,7 @@ const DashboardScreen: React.FC = () => {
                           value={formatPercentage(sensorData.humidity)}
                           icon="💧"
                           threshold={THRESHOLDS.humidity}
-                          currentValue={sensorData.humidity}
+                          currentValue={sensorData.humidity ?? 0}
                           unit="%"
                         />
                       </View>
@@ -282,6 +294,23 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.xs,
+  },
+  headerButtonIcon: {
+    fontSize: 18,
   },
   title: {
     fontSize: 24,

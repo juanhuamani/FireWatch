@@ -10,6 +10,9 @@ const axios = require('axios');
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
 const INTERVAL = 3000; // Enviar cada 3 segundos
 
+// Forzar la primera lectura como "fuego" para activar captura
+const FORCE_FIRE_ON_FIRST_SEND = true;
+
 console.log('🤖 Simulador de Arduino - Fire ID');
 console.log('==================================');
 console.log(`Servidor: ${SERVER_URL}`);
@@ -43,8 +46,9 @@ function generateSensorData(simulateFire = false) {
 async function sendSensorData() {
   iteration++;
   
-  // Cada 10 iteraciones, simular condiciones de fuego
-  const simulateFire = (iteration % 10 === 0);
+  // En la primera iteración forzamos fuego si está habilitado, luego cada 10
+  const simulateFire =
+    (FORCE_FIRE_ON_FIRST_SEND && iteration === 1) || (iteration % 10 === 0);
   
   const data = generateSensorData(simulateFire);
   

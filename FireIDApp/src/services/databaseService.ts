@@ -1,9 +1,11 @@
-// Servicio de SQLite para la app móvil
+// Servicio de SQLite para la app móvil usando react-native-quick-sqlite
 
-import SQLite from 'react-native-sqlite-storage';
+import { open } from 'react-native-quick-sqlite';
 
 class DatabaseService {
   private db: any = null;
+  private dbName = 'fireid.db';
+  private initialized = false;
 
   constructor() {
     // Constructor vacío, la inicialización se hace en initialize()
@@ -14,13 +16,20 @@ class DatabaseService {
    */
   async initialize(): Promise<void> {
     try {
-      this.db = await SQLite.openDatabase({
-        name: 'fireid.db',
-        location: 'default'
+      if (this.initialized && this.db) {
+        console.log('🗄️  Base de datos ya inicializada');
+        return;
+      }
+
+      // Abrir base de datos
+      this.db = open({
+        name: this.dbName,
+        location: 'default',
       });
 
       console.log('🗄️  Base de datos SQLite inicializada');
-      await this.initializeTables();
+      this.initializeTables();
+      this.initialized = true;
     } catch (error) {
       console.error('❌ Error al inicializar base de datos:', error);
       throw error;
@@ -30,10 +39,10 @@ class DatabaseService {
   /**
    * Crear tablas
    */
-  private async initializeTables(): Promise<void> {
+  private initializeTables(): void {
     try {
       // Tabla de alertas locales
-      await this.executeSql(`
+      this.db.execute(`
         CREATE TABLE IF NOT EXISTS local_alerts (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           alert_id INTEGER,
@@ -49,7 +58,7 @@ class DatabaseService {
       `);
 
       // Tabla de capturas locales
-      await this.executeSql(`
+      this.db.execute(`
         CREATE TABLE IF NOT EXISTS local_captures (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           request_id TEXT UNIQUE,
@@ -61,7 +70,7 @@ class DatabaseService {
       `);
 
       // Tabla de datos sincronizados
-      await this.executeSql(`
+      this.db.execute(`
         CREATE TABLE IF NOT EXISTS sync_status (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           entity_type TEXT,
@@ -72,7 +81,7 @@ class DatabaseService {
       `);
 
       // Tabla de configuración local
-      await this.executeSql(`
+      this.db.execute(`
         CREATE TABLE IF NOT EXISTS app_config (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           key TEXT UNIQUE,
@@ -91,23 +100,18 @@ class DatabaseService {
   /**
    * Ejecutar sentencia SQL
    */
-  private async executeSql(
-    sql: string,
-    params: any[] = []
-  ): Promise<any> {
-    return new Promise((resolve, reject) => {
-      if (!this.db) {
-        reject(new Error('Base de datos no inicializada'));
-        return;
-      }
+  private executeSql(sql: string, params: any[] = []): any {
+    if (!this.db) {
+      throw new Error('Base de datos no inicializada');
+    }
 
-      this.db.transaction((tx: any) => {
-        tx.executeSql(sql, params, (_, result) => resolve(result), (_, error) => {
-          console.error('SQL Error:', error, 'SQL:', sql);
-          reject(error);
-        });
-      });
-    });
+    try {
+      const result = this.db.execute(sql, params);
+      return result;
+    } catch (error) {
+      console.error('SQL Error:', error, 'SQL:', sql);
+      throw error;
+    }
   }
 
   /**
@@ -121,7 +125,7 @@ class DatabaseService {
         await this.initialize();
       }
 
-      await this.executeSql(
+      this.executeSql(
         `INSERT INTO local_alerts (alert_type, severity, message, fire_detected, confidence, image_path)
          VALUES (?, ?, ?, ?, ?, ?)`,
         [
@@ -145,12 +149,12 @@ class DatabaseService {
    */
   async getUnsyncedAlerts(): Promise<any[]> {
     try {
-      const result = await this.executeSql(
+      const result = this.executeSql(
         `SELECT * FROM local_alerts 
          WHERE id NOT IN (SELECT entity_id FROM sync_status WHERE entity_type = 'alert')
          ORDER BY timestamp DESC`
       );
-      return result.rows.raw() || [];
+      return result.rows?._array || [];
     } catch (error) {
       console.error('❌ Error al obtener alertas no sincronizadas:', error);
       return [];
@@ -162,10 +166,10 @@ class DatabaseService {
    */
   async getAllLocalAlerts(): Promise<any[]> {
     try {
-      const result = await this.executeSql(
+      const result = this.executeSql(
         `SELECT * FROM local_alerts ORDER BY timestamp DESC`
       );
-      return result.rows.raw() || [];
+      return result.rows?._array || [];
     } catch (error) {
       console.error('❌ Error al obtener alertas:', error);
       return [];
@@ -183,8 +187,8 @@ class DatabaseService {
         await this.initialize();
       }
 
-      await this.executeSql(
-        `INSERT INTO local_captures (request_id, image_path, fire_detected, confidence)
+      this.executeSql(
+        `INSERT OR REPLACE INTO local_captures (request_id, image_path, fire_detected, confidence)
          VALUES (?, ?, ?, ?)`,
         [
           captureData.requestId,
@@ -205,11 +209,11 @@ class DatabaseService {
    */
   async getLocalCaptures(limit: number = 50): Promise<any[]> {
     try {
-      const result = await this.executeSql(
+      const result = this.executeSql(
         `SELECT * FROM local_captures ORDER BY timestamp DESC LIMIT ?`,
         [limit]
       );
-      return result.rows.raw() || [];
+      return result.rows?._array || [];
     } catch (error) {
       console.error('❌ Error al obtener capturas:', error);
       return [];
@@ -221,7 +225,7 @@ class DatabaseService {
    */
   async saveConfig(key: string, value: string, type: string = 'string'): Promise<void> {
     try {
-      await this.executeSql(
+      this.executeSql(
         `INSERT OR REPLACE INTO app_config (key, value, type)
          VALUES (?, ?, ?)`,
         [key, value, type]
@@ -237,13 +241,13 @@ class DatabaseService {
    */
   async getConfig(key: string): Promise<string | null> {
     try {
-      const result = await this.executeSql(
+      const result = this.executeSql(
         `SELECT value FROM app_config WHERE key = ?`,
         [key]
       );
 
-      if (result.rows.length > 0) {
-        return result.rows.item(0).value;
+      if (result.rows?._array && result.rows._array.length > 0) {
+        return result.rows._array[0].value;
       }
       return null;
     } catch (error) {
@@ -257,7 +261,7 @@ class DatabaseService {
    */
   async markAsSynced(entityType: string, entityId: number): Promise<void> {
     try {
-      await this.executeSql(
+      this.executeSql(
         `INSERT OR REPLACE INTO sync_status (entity_type, entity_id, synced, last_sync)
          VALUES (?, ?, 1, CURRENT_TIMESTAMP)`,
         [entityType, entityId]
@@ -272,9 +276,9 @@ class DatabaseService {
    */
   async clearAll(): Promise<void> {
     try {
-      await this.executeSql('DELETE FROM local_alerts');
-      await this.executeSql('DELETE FROM local_captures');
-      await this.executeSql('DELETE FROM sync_status');
+      this.executeSql('DELETE FROM local_alerts');
+      this.executeSql('DELETE FROM local_captures');
+      this.executeSql('DELETE FROM sync_status');
       console.log('✅ Base de datos limpiada');
     } catch (error) {
       console.error('❌ Error al limpiar base de datos:', error);
@@ -285,22 +289,18 @@ class DatabaseService {
    * Cerrar base de datos
    */
   async close(): Promise<void> {
-    return new Promise((resolve, reject) => {
+    try {
       if (this.db) {
-        this.db.close(
-          () => {
-            console.log('🗄️  Base de datos cerrada');
-            resolve();
-          },
-          (error) => {
-            console.error('❌ Error al cerrar base de datos:', error);
-            reject(error);
-          }
-        );
-      } else {
-        resolve();
+        // react-native-quick-sqlite no tiene método close explícito
+        // Se cierra automáticamente cuando la app se cierra
+        this.db = null;
+        this.initialized = false;
+        console.log('🗄️  Base de datos cerrada');
       }
-    });
+    } catch (error) {
+      console.error('❌ Error al cerrar base de datos:', error);
+      throw error;
+    }
   }
 }
 

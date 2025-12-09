@@ -188,6 +188,40 @@ class DatabaseService {
   }
 
   /**
+   * Obtener último estado de alerta basado en la última alerta
+   */
+  getLastAlertStatus() {
+    try {
+      const stmt = this.db.prepare(`
+        SELECT * FROM alerts
+        ORDER BY timestamp DESC
+        LIMIT 1
+      `);
+      
+      const lastAlert = stmt.get();
+      
+      if (!lastAlert) {
+        return 'Normal';
+      }
+      
+      // Si hay fuego detectado con alta confianza, es "Confirmado"
+      if (lastAlert.fire_detected && lastAlert.confidence > 0.7) {
+        return 'Confirmado';
+      }
+      
+      // Si hay alerta no resuelta, es "Riesgo"
+      if (!lastAlert.resolved) {
+        return 'Riesgo';
+      }
+      
+      return 'Normal';
+    } catch (error) {
+      console.error('❌ Error al obtener último estado de alerta:', error);
+      return 'Normal';
+    }
+  }
+
+  /**
    * Marcar alerta como resuelta
    */
   resolveAlert(alertId) {

@@ -72,7 +72,7 @@ const SensorCard: React.FC<SensorCardProps> = ({
 
       {isOverThreshold && (
         <View style={[styles.warningBadge, NEUMORPHIC.raised]}>
-          <Text style={styles.warningText}>⚠ EXCEDIDO</Text>
+          <Text style={styles.warningIcon}>⚠</Text>
         </View>
       )}
     </View>
@@ -153,20 +153,20 @@ const styles = StyleSheet.create({
     top: 6,
     right: 6,
     backgroundColor: COLORS.danger,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: BORDER_RADIUS.round,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 4,
   },
-  warningText: {
-    fontSize: 7,
+  warningIcon: {
+    fontSize: 14,
     color: '#FFFFFF',
-    ...FONTS.bold,
-    letterSpacing: 0.3,
   },
 });
 

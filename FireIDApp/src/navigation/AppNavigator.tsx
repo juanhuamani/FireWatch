@@ -5,10 +5,12 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import DashboardScreen from '../screens/DashboardScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import ActivityScreen from '../screens/ActivityScreen';
 
 export type RootStackParamList = {
   Dashboard: undefined;
   Settings: undefined;
+  Activity: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -40,6 +42,13 @@ const AppNavigator: React.FC = () => {
           component={SettingsScreen}
           options={{
             title: 'Configuración',
+          }}
+        />
+        <Stack.Screen
+          name="Activity"
+          component={ActivityScreen}
+          options={{
+            title: 'Actividad Reciente',
           }}
         />
       </Stack.Navigator>

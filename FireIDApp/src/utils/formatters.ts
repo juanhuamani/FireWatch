@@ -1,11 +1,17 @@
 // Utilidades para formateo de datos
 
-export const formatTemperature = (temp: number): string => {
-  return `${temp.toFixed(1)}°C`;
+export const formatTemperature = (temp: number | null | undefined): string => {
+  if (temp === null || temp === undefined || Number.isNaN(temp)) {
+    return '--';
+  }
+  return `${Number(temp).toFixed(1)}°C`;
 };
 
-export const formatPercentage = (value: number): string => {
-  return `${value.toFixed(0)}%`;
+export const formatPercentage = (value: number | null | undefined): string => {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '--';
+  }
+  return `${Number(value).toFixed(0)}%`;
 };
 
 export const formatTimestamp = (date: Date): string => {
