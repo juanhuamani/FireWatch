@@ -109,11 +109,22 @@ android {
 
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
-    implementation("com.facebook.react:react-android")
+    implementation("com.facebook.react:react-android") {
+        exclude group: 'com.android.support'
+    }
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
+    }
+}
+
+configurations {
+    all {
+        resolutionStrategy {
+            force 'androidx.core:core:1.13.1'
+            exclude group: 'com.android.support'
+        }
     }
 }

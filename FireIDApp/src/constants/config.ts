@@ -2,7 +2,7 @@
 
 export const SERVER_CONFIG = {
   // URL del servidor backend - IP real en la red WiFi
-  url: 'http://192.168.1.34', // IP de la PC en la red local
+  url: 'http://192.168.18.19', // IP de la PC en la red local
   port: 3000,
   reconnectInterval: 5000, // 5 segundos
 };

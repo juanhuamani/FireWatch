@@ -18,6 +18,8 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const aiService = require('./services/aiService');
+const databaseService = require('./services/databaseService');
+
 
 // ==================== CONFIGURACIÓN ====================
 
@@ -34,6 +36,7 @@ const io = socketIO(server, {
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json());
 
 // Servir archivos estáticos
 app.use('/captures', express.static(path.join(__dirname, 'captures')));
@@ -48,18 +51,18 @@ const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:5000/anal
 
 let systemState = {
   sensorData: {
-    temperature: 25,
-    light: 300,
-    smoke: 100,
-    humidity: 60,
-    timestamp: new Date()
+    temperature: null,
+    light: null,
+    smoke: null,
+    humidity: null,
+    timestamp: null
   },
   alertStatus: 'Normal', // Normal, Riesgo, Confirmado
   thresholds: {
-    temperature: 35,
-    light: 800,
-    smoke: 500,
-    humidity: 30
+    temperature: 34,      // Temperatura crítica: 50°C
+    light: 1500,          // Luz crítica: 1500 lux (fuego intenso)
+    smoke: 1000,          // Humo crítico: 1000 ppm
+    humidity: 15          // Humedad mínima: 15%
   },
   connectedClients: 0,
   history: []
@@ -84,13 +87,79 @@ function logEvent(type, message, data = null) {
   }
 }
 
+// Tracking de endpoints y conexiones
+const endpointStats = new Map();
+const activeConnections = new Map(); // socketId -> connectionInfo
+const recentRequests = []; // Array de requests recientes
+
+// Middleware para trackear TODOS los requests
+app.use((req, res, next) => {
+  const endpoint = req.path;
+  const method = req.method;
+  const fullPath = `${method} ${endpoint}`;
+  const timestamp = new Date().toISOString();
+  
+  // Registrar en estadísticas
+  if (!endpointStats.has(fullPath)) {
+    endpointStats.set(fullPath, {
+      method,
+      path: endpoint,
+      count: 0,
+      lastAccess: null,
+      firstAccess: timestamp
+    });
+  }
+  
+  const stats = endpointStats.get(fullPath);
+  stats.count++;
+  stats.lastAccess = timestamp;
+  
+  // Agregar a requests recientes
+  const requestInfo = {
+    timestamp,
+    method,
+    path: endpoint,
+    ip: req.ip || req.connection.remoteAddress,
+    userAgent: req.headers['user-agent'] || 'Unknown',
+    query: Object.keys(req.query).length > 0 ? req.query : undefined,
+    body: req.method === 'POST' ? 'Has body' : undefined
+  };
+  
+  recentRequests.push(requestInfo);
+  
+  // Mantener solo los últimos 50 requests
+  if (recentRequests.length > 50) {
+    recentRequests.shift();
+  }
+  
+  // Log en consola
+  console.log(`📥 ${method} ${endpoint} - ${req.ip || 'unknown IP'}`);
+  
+  next();
+});
+
 // ==================== SOCKET.IO - COMUNICACIÓN CON APP MÓVIL ====================
 
 io.on('connection', (socket) => {
   systemState.connectedClients++;
+  
+  // Registrar conexión activa
+  activeConnections.set(socket.id, {
+    socketId: socket.id,
+    connectedAt: new Date().toISOString(),
+    lastActivity: new Date().toISOString(),
+    address: socket.handshake.address,
+    userAgent: socket.handshake.headers['user-agent'] || 'Unknown',
+    events: {
+      captureResponse: 0,
+      thresholdUpdate: 0
+    }
+  });
+  
   logEvent('connection', `📱 App móvil conectada: ${socket.id}`, { 
     clientId: socket.id,
-    totalClients: systemState.connectedClients 
+    totalClients: systemState.connectedClients,
+    address: socket.handshake.address
   });
 
   // Enviar estado actual al conectarse
@@ -99,6 +168,13 @@ io.on('connection', (socket) => {
 
   // ========== Escuchar respuesta de captura ==========
   socket.on('captureResponse', async (data) => {
+    // Actualizar actividad de la conexión
+    const connection = activeConnections.get(socket.id);
+    if (connection) {
+      connection.lastActivity = new Date().toISOString();
+      connection.events.captureResponse++;
+    }
+    
     logEvent('capture', '📸 Respuesta de captura recibida', {
       requestId: data.requestId,
       hasImage: !!data.imageBase64,
@@ -123,13 +199,23 @@ io.on('connection', (socket) => {
 
       // Guardar imagen
       if (data.imageBase64) {
+        console.log(`📊 Tamaño de imageBase64: ${data.imageBase64.length} caracteres`);
         const imageBuffer = Buffer.from(
           data.imageBase64.replace(/^data:image\/\w+;base64,/, ''),
           'base64'
         );
-        imageFile = path.join(captureDir, 'photo.jpg');
-        fs.writeFileSync(imageFile, imageBuffer);
-        logEvent('file', '💾 Imagen guardada', { path: imageFile });
+        console.log(`📊 Tamaño del buffer: ${imageBuffer.length} bytes`);
+        
+        if (imageBuffer.length === 0) {
+          logEvent('error', '❌ Buffer de imagen vacío después de decodificar');
+          data.imageBase64 = null; // Marcar como nulo para usar análisis simulado
+        } else {
+          imageFile = path.join(captureDir, 'photo.jpg');
+          fs.writeFileSync(imageFile, imageBuffer);
+          logEvent('file', '💾 Imagen guardada', { path: imageFile, size: imageBuffer.length });
+        }
+      } else {
+        console.log('⚠️ No se recibió imageBase64 en la respuesta');
       }
 
       // Guardar audio
@@ -143,6 +229,14 @@ io.on('connection', (socket) => {
         logEvent('file', '💾 Audio guardado', { path: audioFile });
       }
 
+      // Validar que hay imagen para analizar
+      if (!data.imageBase64) {
+        logEvent('warning', '⚠️ No hay imagen para analizar, usando análisis simulado');
+        const aiResult = simulateAIAnalysis();
+        socket.emit('analysisResult', aiResult);
+        return;
+      }
+
       // Enviar a IA para análisis
       const aiResult = await analyzeWithAI(data);
       
@@ -153,12 +247,50 @@ io.on('connection', (socket) => {
         
         logEvent('alert', '🔥 ¡FUEGO CONFIRMADO!', aiResult);
         
+        // Guardar alerta en SQLite
+        try {
+          databaseService.saveAlert({
+            type: 'fire_detection',
+            severity: 'critical',
+            message: '¡Fuego detectado por IA!',
+            fireDetected: true,
+            confidence: aiResult.confidence,
+            imagePath: imageFile
+          });
+
+          // Guardar captura en SQLite
+          databaseService.saveCapture({
+            requestId: data.requestId,
+            imagePath: imageFile,
+            audioPath: audioFile,
+            analysisResult: aiResult,
+            fireDetected: true,
+            confidence: aiResult.confidence
+          });
+        } catch (error) {
+          console.error('⚠️  Error al guardar en SQLite:', error);
+        }
+        
         // Enviar alertas
         await sendAlerts(aiResult, data.requestId);
       } else {
         systemState.alertStatus = 'Normal';
         io.emit('alertStatus', 'Normal');
         logEvent('info', '✅ No se detectó fuego', aiResult);
+
+        // Guardar captura en SQLite (sin fuego detectado)
+        try {
+          databaseService.saveCapture({
+            requestId: data.requestId,
+            imagePath: imageFile,
+            audioPath: audioFile,
+            analysisResult: aiResult,
+            fireDetected: false,
+            confidence: aiResult.confidence
+          });
+        } catch (error) {
+          console.error('⚠️  Error al guardar captura en SQLite:', error);
+        }
       }
 
       // Enviar resultado a la app
@@ -187,6 +319,13 @@ io.on('connection', (socket) => {
 
   // ========== Escuchar actualización de umbrales ==========
   socket.on('thresholdUpdate', (thresholds) => {
+    // Actualizar actividad de la conexión
+    const connection = activeConnections.get(socket.id);
+    if (connection) {
+      connection.lastActivity = new Date().toISOString();
+      connection.events.thresholdUpdate++;
+    }
+    
     logEvent('config', '⚙️ Umbrales actualizados', thresholds);
     systemState.thresholds = thresholds;
   });
@@ -194,6 +333,10 @@ io.on('connection', (socket) => {
   // ========== Desconexión ==========
   socket.on('disconnect', () => {
     systemState.connectedClients--;
+    
+    // Remover conexión del registro
+    activeConnections.delete(socket.id);
+    
     logEvent('connection', `📱 App móvil desconectada: ${socket.id}`, {
       clientId: socket.id,
       totalClients: systemState.connectedClients
@@ -202,6 +345,44 @@ io.on('connection', (socket) => {
 });
 
 // ==================== API REST - ENDPOINTS PARA ARDUINO ====================
+
+/**
+ * GET /health
+ * Health check - Verificar si el servidor está corriendo
+ */
+app.get('/health', (req, res) => {
+  const uptime = process.uptime();
+  const uptimeFormatted = {
+    days: Math.floor(uptime / 86400),
+    hours: Math.floor((uptime % 86400) / 3600),
+    minutes: Math.floor((uptime % 3600) / 60),
+    seconds: Math.floor(uptime % 60)
+  };
+
+  res.status(200).json({
+    status: systemState.connectedClients > 0 ? 'ok' : 'idle',
+    message: systemState.connectedClients > 0 
+      ? 'Servidor Fire ID corriendo correctamente'
+      : 'Servidor Fire ID corriendo pero sin clientes conectados',
+    timestamp: new Date().toISOString(),
+    uptime: uptimeFormatted,
+    uptimeSeconds: Math.floor(uptime),
+    service: 'Fire ID Backend Server',
+    version: '1.0.0',
+    connections: {
+      connectedClients: systemState.connectedClients,
+      socketIO: io.engine.clientsCount > 0 ? 'active' : 'inactive',
+      activeConnections: Object.keys(io.sockets.sockets).length
+    },
+    lastSensorUpdate: systemState.sensorData.timestamp,
+    alertStatus: systemState.alertStatus,
+    aiService: {
+      configured: !!AI_SERVICE_URL && AI_SERVICE_URL !== 'http://localhost:5000/analyze',
+      url: AI_SERVICE_URL
+    },
+    recentEvents: eventLog.slice(-5)
+  });
+});
 
 /**
  * POST /sensor-data
@@ -225,6 +406,18 @@ app.post('/sensor-data', (req, res) => {
     humidity: humidity ? parseFloat(humidity) : undefined,
     timestamp: new Date()
   };
+
+  // Guardar en SQLite
+  try {
+    databaseService.saveSensorData({
+      temperature: parseFloat(temperature),
+      light: parseFloat(light),
+      smoke: parseFloat(smoke),
+      humidity: humidity ? parseFloat(humidity) : null
+    });
+  } catch (error) {
+    console.error('⚠️  Error al guardar datos en SQLite:', error);
+  }
 
   // Enviar a todas las apps móviles conectadas
   io.emit('sensorData', systemState.sensorData);
@@ -268,6 +461,47 @@ app.get('/status', (req, res) => {
       connectedClients: systemState.connectedClients,
       serverTime: new Date()
     }
+  });
+});
+
+/**
+ * GET /connections
+ * Ver todas las conexiones activas y estadísticas de endpoints
+ */
+app.get('/connections', (req, res) => {
+  const connections = Array.from(activeConnections.values());
+  const endpointArray = Array.from(endpointStats.values());
+  
+  // Calcular total de requests
+  const totalRequests = endpointArray.reduce((sum, stat) => sum + stat.count, 0);
+  
+  res.json({
+    success: true,
+    timestamp: new Date().toISOString(),
+    summary: {
+      activeWebSocketConnections: connections.length,
+      totalHTTPRequests: totalRequests,
+      uniqueEndpoints: endpointStats.size,
+      serverUptime: Math.floor(process.uptime()) + 's'
+    },
+    webSocketConnections: connections.map(conn => ({
+      socketId: conn.socketId,
+      connectedAt: conn.connectedAt,
+      lastActivity: conn.lastActivity,
+      duration: Math.floor((new Date() - new Date(conn.connectedAt)) / 1000) + 's',
+      address: conn.address,
+      userAgent: conn.userAgent,
+      eventsReceived: conn.events
+    })),
+    httpEndpoints: endpointArray.map(stats => ({
+      method: stats.method,
+      path: stats.path,
+      requests: stats.count,
+      firstAccess: stats.firstAccess,
+      lastAccess: stats.lastAccess,
+      percentage: totalRequests > 0 ? ((stats.count / totalRequests) * 100).toFixed(2) + '%' : '0%'
+    })).sort((a, b) => b.requests - a.requests),
+    recentRequests: recentRequests.slice(-20).reverse() // Últimos 20, más recientes primero
   });
 });
 
@@ -572,6 +806,108 @@ ID de Captura: ${requestId}
   // - sendTelegramAlert(message, requestId)
 }
 
+// ==================== ENDPOINTS DE API PARA DATOS ====================
+
+/**
+ * GET /api/sensor-data
+ * Obtener últimos datos de sensores
+ */
+app.get('/api/sensor-data', (req, res) => {
+  try {
+    const limit = req.query.limit || 100;
+    const data = databaseService.getLatestSensorData(limit);
+    res.json({
+      success: true,
+      data: data
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/alerts
+ * Obtener alertas
+ */
+app.get('/api/alerts', (req, res) => {
+  try {
+    const limit = req.query.limit || 50;
+    const unresolvedOnly = req.query.unresolved === 'true';
+    const data = databaseService.getAlerts(limit, unresolvedOnly);
+    res.json({
+      success: true,
+      data: data
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/captures
+ * Obtener capturas
+ */
+app.get('/api/captures', (req, res) => {
+  try {
+    const limit = req.query.limit || 50;
+    const data = databaseService.getCaptures(limit);
+    res.json({
+      success: true,
+      data: data
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/statistics
+ * Obtener estadísticas
+ */
+app.get('/api/statistics', (req, res) => {
+  try {
+    const stats = databaseService.getStatistics();
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/alerts/:id/resolve
+ * Marcar alerta como resuelta
+ */
+app.post('/api/alerts/:id/resolve', (req, res) => {
+  try {
+    const alertId = req.params.id;
+    databaseService.resolveAlert(alertId);
+    res.json({
+      success: true,
+      message: 'Alerta marcada como resuelta'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // ==================== INICIAR SERVIDOR ====================
 
 // Crear carpetas necesarias
@@ -583,6 +919,14 @@ if (!fs.existsSync(capturesDir)) {
 const modelsDir = path.join(__dirname, 'models');
 if (!fs.existsSync(modelsDir)) {
   fs.mkdirSync(modelsDir, { recursive: true });
+}
+
+// Inicializar SQLite
+try {
+  databaseService.initializeTables();
+  console.log('✅ Base de datos SQLite inicializada correctamente');
+} catch (error) {
+  console.error('❌ Error al inicializar SQLite:', error);
 }
 
 // Inicializar servicio de IA
@@ -599,6 +943,7 @@ if (!fs.existsSync(publicDir)) {
 server.listen(PORT, HOST, () => {
   console.log('\n' + '='.repeat(60));
   console.log('🔥 FIRE ID BACKEND SERVER');
+  console.log('HOST:', HOST);
   console.log('='.repeat(60));
   console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
   console.log(`🌐 Acceso desde red: http://${getLocalIP()}:${PORT}`);

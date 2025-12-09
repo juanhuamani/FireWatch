@@ -274,8 +274,16 @@ class AIService {
    */
   async imageToTensor(imageBase64) {
     try {
+      if (!imageBase64) {
+        throw new Error('imageBase64 está vacío');
+      }
+
       const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
       const buffer = Buffer.from(base64Data, 'base64');
+      
+      if (buffer.length === 0) {
+        throw new Error('Buffer de imagen está vacío');
+      }
       
       // Procesar con sharp para formato correcto
       const processed = await sharp(buffer)

@@ -2,6 +2,7 @@
 
 import cameraService from './cameraService';
 import socketService from './socketService';
+import databaseService from './databaseService';
 import { CaptureRequest, CaptureResponse } from '../types';
 
 class CaptureService {
@@ -32,6 +33,24 @@ class CaptureService {
         timestamp: new Date(),
         error: !imageBase64 ? 'Error al capturar foto' : undefined,
       };
+
+      // Guardar captura en SQLite (solo si hay imagen)
+      if (photoPath && imageBase64) {
+        try {
+          await databaseService.saveLocalCapture({
+            requestId: request.requestId,
+            imagePath: photoPath,
+            fireDetected: false,
+            confidence: 0
+          });
+          console.log('💾 Captura guardada en SQLite');
+        } catch (error) {
+          console.error('⚠️  Error al guardar en SQLite:', error);
+          // No fallar si SQLite falla, continuar con el envío
+        }
+      } else {
+        console.log('⚠️  No se guardó en SQLite: no hay imagen');
+      }
 
       // Enviar al servidor
       console.log('📤 Enviando foto al servidor...');
@@ -81,4 +100,3 @@ class CaptureService {
 }
 
 export default new CaptureService();
-

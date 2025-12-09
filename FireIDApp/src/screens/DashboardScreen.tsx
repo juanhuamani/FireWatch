@@ -84,24 +84,24 @@ const DashboardScreen: React.FC = () => {
   };
 
   const handleCaptureRequest = async (request: CaptureRequest) => {
-    // Mostrar notificación push
+    console.log('🚨 Captura solicitada automáticamente:', request.requestId);
+    
+    // Mostrar notificación push (para que el usuario sepa que se está capturando)
     notificationService.showCaptureNotification(request.requestId);
 
-    // También mostrar alerta en la app si está abierta
-    Alert.alert(
-      '📸 Captura Solicitada',
-      'El servidor ha solicitado capturar una foto para análisis de fuego.',
-      [
-        {
-          text: 'Cancelar',
-          style: 'cancel',
-        },
-        {
-          text: 'Capturar Foto',
-          onPress: () => captureService.handleCaptureRequest(request),
-        },
-      ]
-    );
+    // CAPTURA AUTOMÁTICA - Sin confirmación del usuario
+    try {
+      await captureService.handleCaptureRequest(request);
+      console.log('✅ Captura automática completada');
+    } catch (error) {
+      console.error('❌ Error en captura automática:', error);
+      // Mostrar alerta solo si hay error
+      Alert.alert(
+        '❌ Error en Captura',
+        'No se pudo capturar la foto automáticamente.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   const handleAnalysisResult = (result: any) => {
