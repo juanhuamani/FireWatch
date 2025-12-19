@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  fire-id-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fire-id-server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      # Descomenta y configura según necesites:
+      # - AI_SERVICE_URL=http://localhost:5000/analyze
+      # - EMAIL_HOST=smtp.gmail.com
+      # - EMAIL_PORT=587
+      # - EMAIL_USER=tu-email@gmail.com
+      # - EMAIL_PASS=tu-password
+    volumes:
+      # Persistir capturas
+      - ./captures:/app/captures
+      # Persistir base de datos
+      - ./data:/app/data
+      # Archivos estáticos (opcional)
+      - ./public:/app/public
+    networks:
+      - fire-id-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  fire-id-network:
+    driver: bridge
+

@@ -4,6 +4,23 @@ Servidor backend para el sistema de detección de fuego IoT Fire ID.
 
 ## 🚀 Instalación
 
+### Opción 1: Docker (Recomendado)
+
+```bash
+# Usando Docker Compose
+docker-compose up -d
+
+# Ver logs
+docker-compose logs -f
+
+# Detener
+docker-compose down
+```
+
+Para más detalles sobre Docker, consulta [DOCKER.md](./DOCKER.md)
+
+### Opción 2: Instalación Local
+
 ```bash
 # Instalar dependencias
 npm install
